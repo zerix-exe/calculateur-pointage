@@ -1,0 +1,119 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Pointage — 7h32 & congés variables</title>
+<style>
+:root{--bg:#f5f5f7;--card:#fff;--text:#171717;--muted:#777;--accent:#111}
+@media(prefers-color-scheme:dark){:root{--bg:#111;--card:#1c1c1e;--text:#f5f5f7;--muted:#aaa;--accent:#fff}}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;padding:24px}
+main{max-width:900px;margin:auto}.card{background:var(--card);border-radius:22px;padding:20px;margin-bottom:16px;box-shadow:0 8px 30px #00000010}
+h1{margin:0 0 5px;font-size:30px}.muted{color:var(--muted);font-size:13px}
+.grid{display:grid;grid-template-columns:repeat(4,1fr);gap:12px}
+label{font-size:12px;color:var(--muted);display:block;margin-bottom:6px}
+input{width:100%;padding:12px;border:1px solid #ccc;border-radius:12px;background:transparent;color:inherit;font-size:17px}
+.outputs{display:grid;grid-template-columns:1fr 1fr;gap:12px}.out{padding:18px;border-radius:17px;background:#00000008}
+.out b{display:block;font-size:27px;margin-top:4px}.tag{font-size:12px;color:var(--muted)}
+.progress{height:9px;background:#00000018;border-radius:99px;overflow:hidden;margin-top:10px}.bar{height:100%;width:0;background:var(--accent);transition:.2s}
+table{width:100%;border-collapse:collapse;font-size:13px}th,td{padding:9px;border-bottom:1px solid #00000012;text-align:left}
+button{padding:10px 14px;border:0;border-radius:12px;cursor:pointer;background:var(--accent);color:var(--bg)}
+@media(max-width:650px){.grid,.outputs{grid-template-columns:1fr 1fr}.grid{grid-template-columns:1fr 1fr}}
+</style>
+</head>
+<body>
+<main>
+<section class="card">
+  <h1>Pointage</h1><div class="muted">7h32 de travail effectif + objectif de congés variables</div>
+</section>
+
+<section class="card">
+  <div style="display:flex;justify-content:space-between;gap:16px;align-items:center;flex-wrap:wrap">
+    <div><div class="tag">Congés variables — objectif annuel</div>
+    <div style="font-size:26px;font-weight:700" id="annual">0h00 / 40h00</div>
+    <div class="muted" id="remaining">40h00 restantes</div></div>
+    <div style="width:260px"><div class="progress"><div class="bar" id="bar"></div></div>
+    <div class="muted" style="text-align:right;margin-top:4px" id="pct">0%</div></div>
+  </div>
+</section>
+
+<section class="card">
+  <div class="grid">
+    <div><label>Date</label><input id="date" type="date"></div>
+    <div><label>Arrivée</label><input id="arrivee" type="time"></div>
+    <div><label>Départ midi</label><input id="midi1" type="time"></div>
+    <div><label>Retour midi</label><input id="midi2" type="time"></div>
+  </div>
+</section>
+
+<section class="card">
+  <div class="outputs">
+    <div class="out"><div class="tag">🕐 Départ normal — 7h32</div><b id="normal">—</b></div>
+    <div class="out"><div class="tag">⏱️ Départ objectif du mois</div><b id="objectif">—</b><div class="muted" id="extra">—</div></div>
+  </div>
+  <div style="margin-top:14px"><label>Départ réel — pour calculer ce que tu as accumulé</label><input id="soir" type="time" style="max-width:180px"></div>
+  <div class="muted" id="todayExtra" style="margin-top:10px"></div>
+</section>
+
+<section class="card">
+  <div style="display:flex;justify-content:space-between;align-items:center"><h2 style="margin:0;font-size:18px">Historique</h2><button id="reset">Réinitialiser</button></div>
+  <div style="overflow:auto;margin-top:10px"><table><thead><tr><th>Date</th><th>Arrivée</th><th>Midi</th><th>Retour</th><th>Départ</th><th>Variable</th></tr></thead><tbody id="history"></tbody></table></div>
+  <div class="muted" style="margin-top:10px">Une journée n'est enregistrée que lorsque les 4 horaires sont renseignés.</div>
+</section>
+</main>
+
+<script>
+const TARGET=452, MONTHLY=480, ANNUAL=2400;
+const $=id=>document.getElementById(id);
+const pad=n=>String(n).padStart(2,'0');
+function hm(min){min=Math.round(min);let h=Math.floor(min/60)%24,m=min%60;return pad(h)+':'+pad(m)}
+function val(id){let v=$(id).value;if(!v)return null;let [h,m]=v.split(':').map(Number);return h*60+m}
+function today(){return new Date().toISOString().slice(0,10)}
+$('date').value=today();
+
+const monthlyExtra={9:0,10:29,11:30,12:27,1:30,2:32,3:32,4:32,5:30,6:35,7:24,8:24,9:32};
+function monthGoal(dateStr){
+  const d=new Date(dateStr+'T12:00:00'); const m=d.getMonth()+1;
+  if(d.getFullYear()===2026 && m===9)return 0;
+  return ({10:29,11:30,12:27,1:30,2:32,3:32,4:32,5:30,6:35,7:24,8:24,9:32,10:29,11:30,12:27}[m] ?? 0);
+}
+function parseHistory(){try{return JSON.parse(localStorage.getItem('pointageHistoryFinal')||'[]')}catch{return[]}}
+function saveHistory(h){localStorage.setItem('pointageHistoryFinal',JSON.stringify(h))}
+function extraTotal(){return Math.min(ANNUAL,parseHistory().reduce((s,x)=>s+(+x.extra||0),0))}
+function renderAnnual(){
+ let t=extraTotal(),r=Math.max(0,ANNUAL-t),p=t/ANNUAL*100;
+ $('annual').textContent=hm(t)+' / 40h00';
+ $('remaining').textContent=r?hm(r)+' restantes':'Objectif de 40h atteint';
+ $('bar').style.width=Math.min(100,p)+'%'; $('pct').textContent=Math.round(p)+'%';
+}
+function renderHistory(){
+ $('history').innerHTML=parseHistory().slice().reverse().map(x=>`<tr><td>${x.date}</td><td>${x.a}</td><td>${x.m1}</td><td>${x.m2}</td><td>${x.s}</td><td>+${hm(x.extra)}</td></tr>`).join('');
+}
+function calc(){
+ const a=val('arrivee'),m1=val('midi1'),m2=val('midi2');
+ if(a!=null){
+   // Morning-only estimate: minimum 35 min lunch.
+   $('normal').textContent=hm(a+TARGET+35);
+   const ex=monthGoal($('date').value);
+   $('objectif').textContent=hm(a+TARGET+35+ex);
+   $('extra').textContent='Objectif : +'+ex+' min/jour';
+ } else {$('normal').textContent='—';$('objectif').textContent='—';$('extra').textContent='—';}
+ if(a!=null&&m1!=null&&m2!=null){
+   const ex=monthGoal($('date').value);
+   $('normal').textContent=hm(m2+Math.max(0,TARGET-(m1-a)));
+   $('objectif').textContent=hm(m2+Math.max(0,TARGET+ex-(m1-a)));
+ }
+ const a2=a,m12=val('midi1'),m22=val('midi2'),s=val('soir');
+ if(a2!=null&&m12!=null&&m22!=null&&s!=null){
+   let worked=(m12-a2)+(s-m22), extra=Math.max(0,worked-TARGET);
+   $('todayExtra').textContent='Variable accumulée aujourd’hui : +'+hm(extra);
+   let h=parseHistory().filter(x=>x.date!==$('date').value);
+   h.push({date:$('date').value,a:$('arrivee').value,m1:$('midi1').value,m2:$('midi2').value,s:$('soir').value,extra});
+   saveHistory(h); renderAnnual(); renderHistory();
+ } else {$('todayExtra').textContent='';}
+}
+['date','arrivee','midi1','midi2','soir'].forEach(id=>$(id).addEventListener('input',calc));
+$('reset').onclick=()=>{if(confirm('Effacer tout l’historique ?')){localStorage.removeItem('pointageHistoryFinal');renderAnnual();renderHistory()}};
+renderAnnual();renderHistory();
+</script>
+</body></html>
