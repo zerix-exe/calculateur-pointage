@@ -4,11 +4,14 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Pointage — 7h32 & congés variables</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <style>
-:root{--bg:#f5f5f7;--card:#fff;--text:#171717;--muted:#777;--accent:#111}
-@media(prefers-color-scheme:dark){:root{--bg:#111;--card:#1c1c1e;--text:#f5f5f7;--muted:#aaa;--accent:#fff}}
-*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;padding:24px}
-main{max-width:900px;margin:auto}.card{background:var(--card);border-radius:22px;padding:20px;margin-bottom:16px;box-shadow:0 8px 30px #00000010}
+:root{--bg:#f5f5f7;--card:#fff;--text:#171717;--muted:#777;--accent:#111;--danger:#b42318}
+@media(prefers-color-scheme:dark){:root{--bg:#111;--card:#1c1c1e;--text:#f5f5f7;--muted:#aaa;--accent:#fff;--danger:#ff6b6b}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;padding:24px}
+main{max-width:900px;margin:auto}
+.card{background:var(--card);border-radius:22px;padding:20px;margin-bottom:16px;box-shadow:0 8px 30px #00000010}
 h1{margin:0 0 5px;font-size:30px}.muted{color:var(--muted);font-size:13px}
 .grid{display:grid;grid-template-columns:repeat(4,1fr);gap:12px}
 label{font-size:12px;color:var(--muted);display:block;margin-bottom:6px}
@@ -18,13 +21,54 @@ input{width:100%;padding:12px;border:1px solid #ccc;border-radius:12px;backgroun
 .progress{height:9px;background:#00000018;border-radius:99px;overflow:hidden;margin-top:10px}.bar{height:100%;width:0;background:var(--accent);transition:.2s}
 table{width:100%;border-collapse:collapse;font-size:13px}th,td{padding:9px;border-bottom:1px solid #00000012;text-align:left}
 button{padding:10px 14px;border:0;border-radius:12px;cursor:pointer;background:var(--accent);color:var(--bg)}
-@media(max-width:650px){.grid,.outputs{grid-template-columns:1fr 1fr}.grid{grid-template-columns:1fr 1fr}}
+button.secondary{background:#00000010;color:inherit}
+button.danger{background:var(--danger);color:#fff}
+button:disabled{opacity:.5;cursor:not-allowed}
+.auth-row{display:flex;gap:10px;align-items:end;flex-wrap:wrap}
+.auth-row>div{flex:1;min-width:220px}
+.status{padding:10px 12px;border-radius:12px;background:#00000008;font-size:13px}
+.message{margin-top:10px;font-size:13px}
+.message.error{color:var(--danger)}
+.hidden{display:none!important}
+@media(max-width:650px){.grid,.outputs{grid-template-columns:1fr 1fr}}
+@media(max-width:480px){.grid,.outputs{grid-template-columns:1fr}}
 </style>
 </head>
 <body>
 <main>
+
+<section class="card" id="authCard">
+  <h1>Connexion</h1>
+  <div class="muted" style="margin-bottom:16px">Connecte-toi pour synchroniser ton historique et ton compteur 40h sur tous tes appareils.</div>
+  <div class="auth-row">
+    <div>
+      <label>Email</label>
+      <input id="email" type="email" autocomplete="email" placeholder="ton@email.fr">
+    </div>
+    <div>
+      <label>Mot de passe</label>
+      <input id="password" type="password" autocomplete="current-password" placeholder="••••••••">
+    </div>
+    <div style="flex:0">
+      <button id="login">Se connecter</button>
+    </div>
+  </div>
+  <div id="authMessage" class="message"></div>
+</section>
+
+<div id="app" class="hidden">
+
 <section class="card">
-  <h1>Pointage</h1><div class="muted">7h32 de travail effectif + objectif de congés variables</div>
+  <div style="display:flex;justify-content:space-between;gap:16px;align-items:center;flex-wrap:wrap">
+    <div>
+      <h1>Pointage</h1>
+      <div class="muted">7h32 de travail effectif + objectif de congés variables</div>
+    </div>
+    <div style="display:flex;align-items:center;gap:10px">
+      <div class="status" id="account"></div>
+      <button class="secondary" id="logout">Déconnexion</button>
+    </div>
+  </div>
 </section>
 
 <section class="card">
@@ -56,14 +100,33 @@ button{padding:10px 14px;border:0;border-radius:12px;cursor:pointer;background:v
 </section>
 
 <section class="card">
-  <div style="display:flex;justify-content:space-between;align-items:center"><h2 style="margin:0;font-size:18px">Historique</h2><button id="reset">Réinitialiser</button></div>
+  <div style="display:flex;justify-content:space-between;align-items:center;gap:10px">
+    <h2 style="margin:0;font-size:18px">Historique synchronisé</h2>
+    <button class="danger" id="reset">Réinitialiser</button>
+  </div>
   <div style="overflow:auto;margin-top:10px"><table><thead><tr><th>Date</th><th>Arrivée</th><th>Midi</th><th>Retour</th><th>Départ</th><th>Variable</th></tr></thead><tbody id="history"></tbody></table></div>
-  <div class="muted" style="margin-top:10px">Une journée n'est enregistrée que lorsque les 4 horaires sont renseignés.</div>
+  <div class="muted" style="margin-top:10px">Une journée est enregistrée lorsque les 4 horaires sont renseignés. Les données sont stockées dans ton compte Supabase.</div>
 </section>
+
+</div>
 </main>
 
 <script>
-const TARGET=452, MONTHLY=480, ANNUAL=2400;
+/* ============================================================
+   SUPABASE
+   Remplace uniquement les 2 valeurs ci-dessous avec tes valeurs
+   copiées depuis Supabase.
+   IMPORTANT : utilise la Publishable key, jamais la Secret key.
+   ============================================================ */
+const SUPABASE_URL = 'https://mnusbqmzjzryswzqcixf.supabase.co';
+const SUPABASE_PUBLISHABLE_KEY = 'sb_publishable_WMdka8Oi2PaDYu_CuJocNQ_Ixtr9WSi';
+
+const supabaseClient = window.supabase.createClient(
+  SUPABASE_URL,
+  SUPABASE_PUBLISHABLE_KEY
+);
+
+const TARGET=452, ANNUAL=2400;
 const $=id=>document.getElementById(id);
 const pad=n=>String(n).padStart(2,'0');
 function hm(min){min=Math.round(min);let h=Math.floor(min/60)%24,m=min%60;return pad(h)+':'+pad(m)}
@@ -71,49 +134,211 @@ function val(id){let v=$(id).value;if(!v)return null;let [h,m]=v.split(':').map(
 function today(){return new Date().toISOString().slice(0,10)}
 $('date').value=today();
 
-const monthlyExtra={9:0,10:29,11:30,12:27,1:30,2:32,3:32,4:32,5:30,6:35,7:24,8:24,9:32};
 function monthGoal(dateStr){
-  const d=new Date(dateStr+'T12:00:00'); const m=d.getMonth()+1;
+  const d=new Date(dateStr+'T12:00:00');
+  const m=d.getMonth()+1;
   if(d.getFullYear()===2026 && m===9)return 0;
-  return ({10:29,11:30,12:27,1:30,2:32,3:32,4:32,5:30,6:35,7:24,8:24,9:32,10:29,11:30,12:27}[m] ?? 0);
+  return ({10:29,11:30,12:27,1:30,2:32,3:32,4:32,5:30,6:35,7:24,8:24,9:32}[m] ?? 0);
 }
-function parseHistory(){try{return JSON.parse(localStorage.getItem('pointageHistoryFinal')||'[]')}catch{return[]}}
-function saveHistory(h){localStorage.setItem('pointageHistoryFinal',JSON.stringify(h))}
-function extraTotal(){return Math.min(ANNUAL,parseHistory().reduce((s,x)=>s+(+x.extra||0),0))}
+
+let currentUser=null;
+let history=[];
+
+function extraTotal(){
+  return Math.min(ANNUAL,history.reduce((s,x)=>s+(Number(x.extra_minutes)||0),0));
+}
+
 function renderAnnual(){
- let t=extraTotal(),r=Math.max(0,ANNUAL-t),p=t/ANNUAL*100;
- $('annual').textContent=hm(t)+' / 40h00';
- $('remaining').textContent=r?hm(r)+' restantes':'Objectif de 40h atteint';
- $('bar').style.width=Math.min(100,p)+'%'; $('pct').textContent=Math.round(p)+'%';
+  let t=extraTotal(),r=Math.max(0,ANNUAL-t),p=t/ANNUAL*100;
+  $('annual').textContent=hm(t)+' / 40h00';
+  $('remaining').textContent=r?hm(r)+' restantes':'Objectif de 40h atteint';
+  $('bar').style.width=Math.min(100,p)+'%';
+  $('pct').textContent=Math.round(p)+'%';
 }
+
 function renderHistory(){
- $('history').innerHTML=parseHistory().slice().reverse().map(x=>`<tr><td>${x.date}</td><td>${x.a}</td><td>${x.m1}</td><td>${x.m2}</td><td>${x.s}</td><td>+${hm(x.extra)}</td></tr>`).join('');
+  $('history').innerHTML=history.slice().sort((a,b)=>b.date.localeCompare(a.date)).map(x=>
+    `<tr><td>${x.date}</td><td>${x.arrivee||''}</td><td>${x.midi_depart||''}</td><td>${x.midi_retour||''}</td><td>${x.soir||''}</td><td>+${hm(x.extra_minutes||0)}</td></tr>`
+  ).join('');
 }
+
+async function loadHistory(){
+  const {data,error}=await supabaseClient
+    .from('pointages')
+    .select('id,date,arrivee,midi_depart,midi_retour,soir,extra_minutes')
+    .order('date',{ascending:false});
+
+  if(error) throw error;
+  history=data||[];
+  renderAnnual();
+  renderHistory();
+}
+
+function localHistory(){
+  try{return JSON.parse(localStorage.getItem('pointageHistoryFinal')||'[]')}catch{return[]}
+}
+
+async function migrateLocalHistory(){
+  const local=localHistory();
+  if(!local.length || history.length) return;
+
+  const rows=local.map(x=>({
+    date:x.date,
+    arrivee:x.a||null,
+    midi_depart:x.m1||null,
+    midi_retour:x.m2||null,
+    soir:x.s||null,
+    extra_minutes:Number(x.extra)||0
+  }));
+
+  const {error}=await supabaseClient.from('pointages').upsert(rows,{onConflict:'user_id,date'});
+  if(error){
+    console.error(error);
+    return;
+  }
+
+  localStorage.setItem('pointageHistoryMigrated','1');
+  await loadHistory();
+}
+
+async function saveDay(){
+  if(!currentUser) return;
+
+  const a=val('arrivee'),m1=val('midi1'),m2=val('midi2'),s=val('soir');
+  if(a==null||m1==null||m2==null||s==null) return;
+
+  const worked=(m1-a)+(s-m2);
+  const extra=Math.max(0,worked-TARGET);
+
+  $('todayExtra').textContent='Variable accumulée aujourd’hui : +'+hm(extra);
+
+  const row={
+    date:$('date').value,
+    arrivee:$('arrivee').value,
+    midi_depart:$('midi1').value,
+    midi_retour:$('midi2').value,
+    soir:$('soir').value,
+    extra_minutes:extra
+  };
+
+  const {error}=await supabaseClient
+    .from('pointages')
+    .upsert(row,{onConflict:'user_id,date'})
+    .select()
+    .single();
+
+  if(error){
+    $('todayExtra').textContent='Erreur de sauvegarde : '+error.message;
+    return;
+  }
+
+  await loadHistory();
+}
+
 function calc(){
- const a=val('arrivee'),m1=val('midi1'),m2=val('midi2');
- if(a!=null){
-   // Morning-only estimate: minimum 35 min lunch.
-   $('normal').textContent=hm(a+TARGET+35);
-   const ex=monthGoal($('date').value);
-   $('objectif').textContent=hm(a+TARGET+35+ex);
-   $('extra').textContent='Objectif : +'+ex+' min/jour';
- } else {$('normal').textContent='—';$('objectif').textContent='—';$('extra').textContent='—';}
- if(a!=null&&m1!=null&&m2!=null){
-   const ex=monthGoal($('date').value);
-   $('normal').textContent=hm(m2+Math.max(0,TARGET-(m1-a)));
-   $('objectif').textContent=hm(m2+Math.max(0,TARGET+ex-(m1-a)));
- }
- const a2=a,m12=val('midi1'),m22=val('midi2'),s=val('soir');
- if(a2!=null&&m12!=null&&m22!=null&&s!=null){
-   let worked=(m12-a2)+(s-m22), extra=Math.max(0,worked-TARGET);
-   $('todayExtra').textContent='Variable accumulée aujourd’hui : +'+hm(extra);
-   let h=parseHistory().filter(x=>x.date!==$('date').value);
-   h.push({date:$('date').value,a:$('arrivee').value,m1:$('midi1').value,m2:$('midi2').value,s:$('soir').value,extra});
-   saveHistory(h); renderAnnual(); renderHistory();
- } else {$('todayExtra').textContent='';}
+  const a=val('arrivee'),m1=val('midi1'),m2=val('midi2');
+
+  if(a!=null){
+    $('normal').textContent=hm(a+TARGET+35);
+    const ex=monthGoal($('date').value);
+    $('objectif').textContent=hm(a+TARGET+35+ex);
+    $('extra').textContent='Objectif : +'+ex+' min/jour';
+  } else {
+    $('normal').textContent='—';
+    $('objectif').textContent='—';
+    $('extra').textContent='—';
+  }
+
+  if(a!=null&&m1!=null&&m2!=null){
+    const ex=monthGoal($('date').value);
+    $('normal').textContent=hm(m2+Math.max(0,TARGET-(m1-a)));
+    $('objectif').textContent=hm(m2+Math.max(0,TARGET+ex-(m1-a)));
+  }
+
+  const s=val('soir');
+  if(a!=null&&m1!=null&&m2!=null&&s!=null) saveDay();
+  else $('todayExtra').textContent='';
 }
+
+async function login(){
+  const email=$('email').value.trim();
+  const password=$('password').value;
+
+  if(!email||!password){
+    $('authMessage').textContent='Renseigne ton email et ton mot de passe.';
+    $('authMessage').className='message error';
+    return;
+  }
+
+  $('login').disabled=true;
+  $('authMessage').textContent='Connexion...';
+  $('authMessage').className='message';
+
+  const {data,error}=await supabaseClient.auth.signInWithPassword({email,password});
+
+  $('login').disabled=false;
+
+  if(error){
+    $('authMessage').textContent=error.message;
+    $('authMessage').className='message error';
+    return;
+  }
+
+  currentUser=data.user;
+  $('password').value='';
+  await showApp();
+}
+
+async function showApp(){
+  $('authCard').classList.add('hidden');
+  $('app').classList.remove('hidden');
+  $('account').textContent=currentUser.email;
+  await loadHistory();
+  await migrateLocalHistory();
+}
+
+async function logout(){
+  await supabaseClient.auth.signOut();
+  currentUser=null;
+  history=[];
+  $('app').classList.add('hidden');
+  $('authCard').classList.remove('hidden');
+  renderAnnual();
+  renderHistory();
+}
+
+$('login').onclick=login;
+$('logout').onclick=logout;
+$('password').addEventListener('keydown',e=>{if(e.key==='Enter')login()});
 ['date','arrivee','midi1','midi2','soir'].forEach(id=>$(id).addEventListener('input',calc));
-$('reset').onclick=()=>{if(confirm('Effacer tout l’historique ?')){localStorage.removeItem('pointageHistoryFinal');renderAnnual();renderHistory()}};
-renderAnnual();renderHistory();
+
+$('reset').onclick=async()=>{
+  if(!currentUser)return;
+  if(!confirm('Effacer tout l’historique synchronisé ?'))return;
+
+  const {error}=await supabaseClient
+    .from('pointages')
+    .delete()
+    .eq('user_id',currentUser.id);
+
+  if(error){
+    alert('Erreur : '+error.message);
+    return;
+  }
+
+  history=[];
+  localStorage.removeItem('pointageHistoryFinal');
+  renderAnnual();
+  renderHistory();
+};
+
+(async()=>{
+  const {data:{session}}=await supabaseClient.auth.getSession();
+  if(session){
+    currentUser=session.user;
+    await showApp();
+  }
+})();
 </script>
-</body></html>
+</body>
+</html>
