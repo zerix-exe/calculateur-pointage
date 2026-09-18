@@ -83,6 +83,7 @@ button:disabled{opacity:.5;cursor:not-allowed}
 </section>
 
 <section class="card">
+  <div style="display:flex;justify-content:flex-end;margin-bottom:12px"><button class="secondary" id="resetForm" type="button">↺ Réinitialiser les horaires</button></div>
   <div class="grid">
     <div><label>Date</label><input id="date" type="date"></div>
     <div><label>Arrivée</label><input id="arrivee" type="time"></div>
@@ -94,7 +95,7 @@ button:disabled{opacity:.5;cursor:not-allowed}
 <section class="card">
   <div class="outputs">
     <div class="out"><div class="tag">🕐 Départ normal — 7h32</div><b id="normal">—</b></div>
-    <div class="out"><div class="tag">⏱️ Départ objectif du mois</div><b id="objectif">—</b><div class="muted" id="extra">—</div></div>
+    <div class="out"><div class="tag">⏱️ Départ pour les congés variables</div><b id="objectif">—</b><div class="muted" id="extra">—</div></div>
   </div>
   <div style="margin-top:14px"><label>Départ réel — pour calculer ce que tu as accumulé</label><input id="soir" type="time" style="max-width:180px"></div>
   <div class="muted" id="todayExtra" style="margin-top:10px"></div>
@@ -103,7 +104,7 @@ button:disabled{opacity:.5;cursor:not-allowed}
 <section class="card">
   <div style="display:flex;justify-content:space-between;align-items:center;gap:10px">
     <h2 style="margin:0;font-size:18px">Historique synchronisé</h2>
-    <button class="danger" id="reset">Réinitialiser</button>
+    <button class="danger" id="reset">Effacer l’historique</button>
   </div>
   <div style="overflow:auto;margin-top:10px"><table><thead><tr><th>Date</th><th>Arrivée</th><th>Midi</th><th>Retour</th><th>Départ</th><th>Variable</th></tr></thead><tbody id="history"></tbody></table></div>
   <div class="muted" style="margin-top:10px">Une journée est enregistrée lorsque les 4 horaires sont renseignés. Les données sont stockées dans ton compte Supabase.</div>
@@ -134,6 +135,7 @@ function hm(min){min=Math.round(min);let h=Math.floor(min/60)%24,m=min%60;return
 function val(id){let v=$(id).value;if(!v)return null;let [h,m]=v.split(':').map(Number);return h*60+m}
 function today(){return new Date().toISOString().slice(0,10)}
 $('date').value=today();
+calc();
 
 function monthGoal(dateStr){
   const d=new Date(dateStr+'T12:00:00');
@@ -257,8 +259,13 @@ function calc(){
   }
 
   const s=val('soir');
-  if(a!=null&&m1!=null&&m2!=null&&s!=null) saveDay();
-  else $('todayExtra').textContent='';
+  if(a!=null&&m1!=null&&m2!=null&&s!=null){
+    const worked=(m1-a)+(s-m2);
+    const extra=Math.max(0,worked-TARGET);
+    $('todayExtra').textContent='Variable accumulée aujourd’hui : +'+hm(extra);
+  } else {
+    $('todayExtra').textContent='';
+  }
 }
 
 async function login(){
@@ -311,7 +318,20 @@ async function logout(){
 $('login').onclick=login;
 $('logout').onclick=logout;
 $('password').addEventListener('keydown',e=>{if(e.key==='Enter')login()});
-['date','arrivee','midi1','midi2','soir'].forEach(id=>$(id).addEventListener('input',calc));
+['date','arrivee','midi1','midi2','soir'].forEach(id=>{
+  $(id).addEventListener('input',calc);
+  $(id).addEventListener('change',calc);
+});
+
+// Une journée n’est enregistrée dans Supabase qu’au moment où l’utilisateur renseigne
+// son départ réel du soir. Les autres champs ne déclenchent jamais de sauvegarde.
+$('soir').addEventListener('change',saveDay);
+
+$('resetForm').onclick=()=>{
+  ['arrivee','midi1','midi2','soir'].forEach(id=>$(id).value='');
+  calc();
+  $('arrivee').focus();
+};
 
 $('reset').onclick=async()=>{
   if(!currentUser)return;
